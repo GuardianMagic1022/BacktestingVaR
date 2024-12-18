@@ -1,0 +1,406 @@
+---
+title: |
+  <center> Backtesting of Value at Risk (VaR) <center>
+author: 'Shu Dong'
+output:   
+  pdf_document:
+    number_sections: true
+    latex_engine: xelatex
+urlcolor: blue
+bibliography: ["ref.bib"]
+biblio-style: "apalike"
+link-citations: true
+linkcolor: red
+fontsize: 11 pt
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Introduction
+
+Backtesting of value at risk, the concept introduced in the Quantitative Risk 
+Management section $9.3$ [@mcneil2015quantitative], is the method used to 
+evaluate how the risk measurement work. More specifically, since we know that 
+VaR${_\alpha(L)}$ represents the loss with the probability (at least) $\alpha$ 
+will not be exceeded, if we estimate the value at risk at the $\alpha$ 
+percentage level, there will exist $(1 - \alpha)\%$ of the data from the 
+theoretical data set will exceed the $\alpha\%$ the threshold of loss. 
+Backtesting is used to test whether the performance of estimation of the value 
+at risk performs effectively. 
+
+
+* There were three major steps for doing the backtesting evaluation:
+  1. We should have the estimated value for $\mathrm{VaR}_\alpha(X)$ for the 
+  given $\alpha$ significance level.
+  2. By using the backtesting method for our estimated value 
+  $\mathrm{VaR}_\alpha(X)$, we should test statistics and get the $p$-value and 
+  use it to determine whether our result rejects the null hypothesis.
+  3. We can make the conclusion whether our performance of estimation of the 
+  value at risk performs effectively according to the result of testing 
+  hypothesis.
+
+\vspace{0.75cm}
+# Getting the Estimated Value for VaR${_\alpha(X)}$ Given $\alpha = 0.95$
+
+Since we want to choose a suitable estimated value for VaR${_\alpha(X)}$, we can 
+find a suitable financial data set and use the historical daily stock prices 
+from the last ten years selected of the stock for the Yahoo Finance <https://ca.finance.yahoo.com/>.
+However, in order to minimize the influence of the existence of the stock split 
+and the stock dividend, we pick the daily adjusted close price to reduce effects
+which may cause experimental errors as much as possible.
+
+\vspace{0.1cm}
+```{r}
+# Import the selected data set
+apple = read.csv("AAPL.csv", header = TRUE)
+```
+
+\vspace{0.5cm}
+Since we know that the negative daily log return for the $t$-th day is 
+($\log({S_{t-1}}/{S_t}$)) where ${S_t}$ denotes the $t$-th daily adjusted close 
+price and we only focus on the loss part of the value at risk, we apply the 
+negative daily log return for the adjusted close price of the selected data set.
+
+\vspace{0.5cm}
+```{r}
+# Apply the negative daily log return for the selected data
+negative_log_return = -diff(log(apple$Adj.Close))
+```
+
+\vspace{0.5cm}
+In order to get the estimated value for VaR${_\alpha(X)}$ for the selected data, 
+we can fit normal distribution for the sequence of negative daily log returns. 
+Since we know that $\mathrm{VaR}_\alpha(X)=\mu+\sigma\Phi^{-1}(\alpha)$, we can
+get the mean ($\mu$) and the standard derivation ($\sigma$) for the sequence of 
+negative log returns by using maximum-likelihood method.
+
+\vspace{0.5cm}
+```{r}
+# Fit normal distribution
+library(MASS)
+fitdistr(negative_log_return, "normal")
+```
+
+\vspace{0.5cm}
+Therefore, we can get
+
+$$
+parameter =
+\begin{cases}
+-0.0008607853 & \quad \mu \\
+0.0183325403 & \quad \sigma
+\end{cases}
+$$
+
+\vspace{0.5cm}
+Then, since we assume that $\alpha = 0.95$, we can use the parameters which we 
+found and put them in the equation 
+$\mathrm{VaR}_\alpha(X)=\mu+\sigma\Phi^{-1}(\alpha)$ and we can get
+
+$$
+\begin{aligned}
+\mathrm{VaR}_{0.95}(X) &= \mu+\sigma\Phi^{-1}(0.95) \\
+&= -0.0008607853 + 0.0183325403 \cdot 1.645 \\
+& = 0.02929624
+\end{aligned}
+$$
+
+\vspace{0.5cm}
+```{r}
+# Check the calculation of the value at risk
+Var_estimate = qnorm(0.95, mean = mean(negative_log_return), 
+                     sd = sd(negative_log_return))
+```
+
+\vspace{0.5cm}
+By using $R$ to check the result of the calculation above, we can know that the 
+estimated value for $\mathrm{VaR}_{0.95}(X)$ is 0.02929955 based on the data 
+which we selected.
+
+\newpage
+# Method 1: Using Unconditional Method to do Backtesting
+
+Under the unconditional method, we need to count the number of exceptions (the 
+losses larger than estimated for $\mathrm{VaR}_\alpha(X)$) and compare them with 
+the confidence interval in order to determine whether the exceptions are in the 
+statistical limits. If the number of exceptions are in the statistical limits, 
+we reject the null hypothesis.
+
+\vspace{0.5cm}
+Therefore, we can get
+
+$$
+\begin{cases}
+{X} & \quad \text{loss random variable for a portfolio} \\
+{R} & \quad \text{number of exceptions} \\
+{T} & \quad \text{total number of observations} \\
+\hat{c} = \frac{R}{T} & \quad \text{failure rate}
+\end{cases}
+$$
+
+\vspace{0.5cm}
+We can assume that the estimated value for $\mathrm{VaR}_\alpha(X)$ is in the 
+confidence interval $100(1-c)\%$, and then we can expect that 
+$\mathbb{P}(X > \widehat{VaR}_{\alpha}(X)) = c$. It means that the estimated 
+value $\hat{c}$ is an unbiased estimator for the failure rate $c$.
+
+\vspace{0.5cm}
+Since we know that if our estimated value for $\mathrm{VaR}_\alpha(X)$ is 
+accurate, then the number of exceptions $R$ follows a binomial distribution:
+
+$$
+\begin{aligned}
+P(R=r) = {T \choose r} c^{r} (1-c)^{T-r} & \quad \quad \text{, }r=0,1,\dots,T
+\end{aligned}
+$$
+
+\vspace{0.5cm}
+Also, if the number of observations $T$ is large, the binomial distribution can 
+be approximated by the normal distribution by using the central limiting 
+theorem:
+
+$$
+\begin{aligned}
+\frac{R - cT}{\sqrt{c(1-c)T}}\thickapprox N(0,1)
+\end{aligned}
+$$
+
+\vspace{0.5cm}
+Therefore, by using the estimated value for value at risk for $\alpha=0.95$ 
+which we calculated above, we can know the values for the parameters $R$, $T$, 
+$\hat{c}$, respectively.
+
+```{r}
+# Find the value for R, T, c
+Var_estimate
+
+R = sum(negative_log_return > Var_estimate)
+total_obs = length(negative_log_return)
+c = 1 - 0.95
+
+R
+total_obs
+c
+```
+
+\vspace{0.5cm}
+Thus, we can get
+
+$$
+\begin{cases}
+{R} = 112 \\
+{T} = 2518 \\
+{c} = 0.05
+\end{cases}
+$$
+
+\vspace{0.5cm}
+Since the number of observations which we get is 2518 which is large, we use the 
+central limiting theorem to test the statistics.
+
+```{r}
+# Find the p-value for the estimated value for the value at risk using method 1
+test_stat = (R - c * total_obs) / sqrt(c * (1 - c) * total_obs)
+p_value_1 = 2 * (1 - pnorm(abs(test_stat)))
+
+p_value_1
+```
+
+\vspace{0.5cm}
+Therefore, we can get the $p$-value for the estimated value of 
+$\mathrm{VaR}_{0.95}(X)$ is 0.2037343 by using the unconditional method to do 
+backtesting.
+
+\vspace{1.25cm}
+# Method 2: Using Conditional Method to do Backtesting
+
+Under the conditional method, for $t = 1,\dots,T$, we can have
+
+$$
+\begin{cases}
+{I_t} = 1 & \quad \text{exception occurs with the t-th observation}\\
+{I_t} = 0 & \quad \text{exception does not occur with the t-th observation}
+\end{cases}
+$$
+
+\vspace{0.5cm}
+Also, for $t = 1,\dots,T-1$, we can have $X_{t} = I_{t}$ and $Y_{t} = I_{t+1}$. 
+In order to test whether our estimated value for $\mathrm{VaR}_\alpha(X)$ is 
+accurate, it means that we need to determine whether the exceptions 
+($X_{t} = I_{t}$ and $Y_{t} = I_{t+1}$) are independent to each other. If the 
+exceptions are dependent to each other, we reject the null hypothesis.
+
+\vspace{0.5cm}
+Therefore, we can use the likelihood ratio test to test statistics which is
+
+$$
+\begin{aligned}
+D = -2\ln(\frac{\text{maximum likelihood for null model}}{\text{maximum likelhood for alternative model}})
+\end{aligned}
+$$
+
+\vspace{0.5cm}
+So, we can firstly find the exceptions ($X_{t} = I_{t}$ and $Y_{t} = I_{t+1}$).
+
+```{r}
+# Find exceptions X_t and Y_t
+exception = as.numeric(negative_log_return > Var_estimate)
+X_t = exception[-total_obs]
+Y_t = exception[-1]
+```
+
+\vspace{0.5cm}
+Then, we can let $n_{ij}$ be the number of $t$ such that $X_{t} = i$ and 
+${Y_t = j}$, and $n_{00} + n_{01} + n_{10} + n_{11} = T - 1$. So, after knowing 
+the exceptions, we can generate the contingency table.
+
+```{r}
+# Generate the contingency table
+count = table(Y_t, X_t)
+n_00 = count[1, 1]
+n_10 = count[1, 2]
+n_01 = count[2, 1]
+n_11 = count[2, 2]
+
+col_1 = c(n_00, n_01)
+col_2 = c(n_10, n_11)
+name_col = c("X = 0", "X = 1")
+name_row = c("Y = 0", "Y = 1")
+con_table = setNames(data.frame(col1 = col_1, col2 = col_2, 
+                                row.names = name_row), name_col)
+
+library(knitr)
+knitr::kable(con_table, "pipe")
+```
+
+\newpage
+So, we can let
+
+$$
+\begin{cases}
+\pi_{0} = \frac{n_{01}}{n_{00} + n_{01}} \\
+\pi_{1} = \frac{n_{11}}{n_{10} + n_{11}} \\
+\pi = \frac{n_{01}+n_{11}}{T-1}
+\end{cases}
+$$
+
+\vspace{0.5cm}
+By using R, we can know the value for $\pi_{0}$, $\pi_{1}$, $\pi$ which are
+
+```{r}
+# Find the value for pi
+pi_hat = (n_01 + n_11) / (total_obs - 1)
+pi.0_hat = n_01 / (n_00 + n_01)
+pi.1_hat = n_11 / (n_10 + n_11)
+
+pi.0_hat
+pi.1_hat
+pi_hat
+```
+
+$$
+\begin{cases}
+\pi_{0} = 0.04241164 \\
+\pi_{1} = 0.08928571 \\
+\pi = 0.04449742
+\end{cases}
+$$
+
+\vspace{0.5cm}
+Then, under the null hypothesis, we can have
+
+$$
+\begin{cases}
+(1-\pi)^{n_{00} + n_{10}}\cdot\pi^{n_{01} + n_{11}} & \quad \text{maximum likelihood for null model} \\
+(1-\pi_{0})^{n_{00}}\cdot\pi_{0}^{n_{01}}\cdot(1-\pi)^{n_{10}}\cdot\pi_{1}^{n_{11}} & \quad \text{maximum likelhood for alternative model}
+\end{cases}
+$$
+
+\vspace{0.5cm}
+According to the likelihood ratio test, it means that
+
+$$
+\begin{aligned}
+LR_{ind} = -2\ln(\frac{(1-\pi)^{n_{00} + n_{10}}\cdot\pi^{n_{01} + n_{11}}}{(1-\pi_{0})^{n_{00}}\cdot\pi_{0}^{n_{01}}\cdot(1-\pi)^{n_{10}}\cdot\pi_{1}^{n_{11}}})
+\end{aligned}
+$$
+
+\newpage
+So, we can put the value from the contingency table to test statistics.
+
+```{r}
+# Find the p-value for the estimated value for the value at risk using method 2
+LR_stat = -2 * log((1 - pi_hat)^(n_00 + n_10) * pi_hat^(n_01 + n_11) / 
+                     ((1 - pi.0_hat)^n_00 * pi.0_hat^n_01 * 
+                        (1 - pi.1_hat)^n_01 * pi.1_hat^n_11))
+p_value_2 = 1 - pchisq(LR_stat, df = 2)
+
+p_value_2
+```
+
+Therefore, we can get the $p$-value for the estimated value of 
+$\mathrm{VaR}_{0.95}(X)$ is 0.1116728 by using the conditional method to do 
+backtesting.
+
+\vspace{1.25cm}
+# Conclusion
+
+By using the two backtesting methods which discussed above, we can know that:
+
+* From process of the unconditional method to do backtesting, we can get the 
+$p$-value for the estimated value $\mathrm{VaR}_{0.95}(X)$ is 0.2037343 $\leq$ 
+level of significance $\alpha$ ($1-0.95 = 0.05$).
+* From process of the conditional method to do backtesting, we can get the 
+$p$-value for the estimated value $\mathrm{VaR}_{0.95}(X)$ is 0.1116728 $\leq$ 
+level of significance $\alpha$ ($1-0.95 = 0.05$).
+
+Therefore, it means that both $p$-values for the estimated value 
+$\mathrm{VaR}_{0.95}(X)$ by getting from the backtesting process all $\leq$ 
+0.05. According to the principle of the hypothesis test, we can know that if
+$p$-value $\leq$ level of significance $\alpha$, the null hypothesis should be 
+rejected at the level of significance. Thus, we can know that we should not 
+reject the null hypothesis for both testing methods which means that our
+estimated value for $\mathrm{VaR}_{\alpha}(X)$ is accurate.
+
+\vspace{0.5cm}
+However, there still exist limitations to do backtesting which are:
+
+1. The backtesting method requires sufficient detailed data from the past in 
+order to simulate the past conditions which is not very possible or expensive 
+to get in the real working environment.
+2. The backtesting method may experience the overfitting issue which means that 
+the model for evaluating $\mathrm{VaR}_{\alpha}(X)$ may work in the past but 
+may not able to work in the future.
+
+\vspace{0.3cm}
+Nevertheless, the limitations of doing the backtesting cannot conceal the 
+importance of the contribution for forming the value at risk reporting system in
+modern risk management. We are not able to evaluate whether the estimated value 
+for the value at risk is accurate without using the backtesting method.
+
+\newpage
+# Reference
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
